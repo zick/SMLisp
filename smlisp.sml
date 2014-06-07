@@ -8,7 +8,7 @@ datatype obj =
   | SYM of string
   | ERROR of string
   | CONS of ((obj ref) * (obj ref)) ref
-  | SUBR of obj -> obj
+  | SUBR of (obj -> obj) ref
   | EXPR of obj * obj * obj
 
 fun safeCar obj =
@@ -209,13 +209,66 @@ and apply f args env =
 case (f, args) of
     ((ERROR m), _) => ERROR m
   | (_, ERROR m) => ERROR m
-  | (SUBR f1, _) => f1 args
+  | (SUBR(ref f1), _) => f1 args
   | (EXPR(a, b, e), _) => progn b (makeCons (pairlis a args NIL) e) NIL
   | _ => ERROR ((printObj f) ^ " is not function")
 
 fun subrCar args = safeCar (safeCar args)
+
 fun subrCdr args = safeCdr (safeCar args)
+
 fun subrCons args = makeCons (safeCar args) (safeCar (safeCdr args))
+
+fun objEq x y =
+  case (x, y) of
+       (NIL, NIL) => makeSym("t")
+     | (NUM a, NUM b) => if a = b then makeSym("t") else NIL
+     | (SYM a, SYM b) => if a = b then makeSym("t") else NIL
+     | (ERROR a, ERROR b) => if a = b then makeSym("t") else NIL
+     | (CONS a, CONS b) => if a = b then makeSym("t") else NIL
+     | (SUBR a, SUBR b) => if a = b then makeSym("t") else NIL
+     | (EXPR(a1, b1, c1), EXPR(a2, b2, c2)) => (
+         case (objEq a1 a2, objEq b1 b2, objEq c1 c2) of
+              (NIL, _, _) => NIL
+            | (_, NIL, _) => NIL
+            | (_, _, NIL) => NIL
+            |  _ => makeSym("t"))
+     | _ => NIL
+fun subrEq args = objEq (safeCar args) (safeCar (safeCdr args))
+
+fun subrAtom args =
+  case safeCar(args) of
+       CONS _ => NIL
+     | _ => makeSym("t")
+
+fun subrNumberp args =
+  case safeCar(args) of
+       NUM _ => makeSym("t")
+     | _ => NIL
+
+fun subrSymbolp args =
+  case safeCar(args) of
+       SYM _ => makeSym("t")
+     | _ => NIL
+
+fun subrAddOrMul f initVal =
+  let fun doit args acc =
+    case args of
+         CONS(ref(ref(NUM num), ref rest)) => doit rest (f(acc, num))
+       | CONS _ => ERROR "wrong type"
+       | _ => NUM acc
+  in fn args => doit args initVal end
+val subrAdd = subrAddOrMul (fn (x, y) => x + y) 0
+val subrMul = subrAddOrMul (fn (x, y) => x * y) 1
+
+fun subrSubOrDivOrMod f =
+  fn args =>
+    case (safeCar args, safeCar(safeCdr args)) of
+      (NUM x, NUM y) => NUM (f(x, y))
+    | _ => ERROR "wrong type"
+val subrSub = subrSubOrDivOrMod (fn (x, y) => x - y)
+val subrDiv = subrSubOrDivOrMod (fn (x, y) => x div y)
+val subrMod = subrSubOrDivOrMod (fn (x, y) => x mod y)
 
 fun first (x, y) = x
 
@@ -228,8 +281,17 @@ fun repl prompt =
       | NONE => ())
 
 fun run _ = (
-  addToEnv (makeSym "car") (SUBR subrCar) gEnv;
-  addToEnv (makeSym "cdr") (SUBR subrCdr) gEnv;
-  addToEnv (makeSym "cons") (SUBR subrCons) gEnv;
+  addToEnv (makeSym "car") (SUBR(ref(subrCar))) gEnv;
+  addToEnv (makeSym "cdr") (SUBR(ref(subrCdr))) gEnv;
+  addToEnv (makeSym "cons") (SUBR(ref(subrCons))) gEnv;
+  addToEnv (makeSym "eq") (SUBR(ref(subrEq))) gEnv;
+  addToEnv (makeSym "atom") (SUBR(ref(subrAtom))) gEnv;
+  addToEnv (makeSym "numberp") (SUBR(ref(subrNumberp))) gEnv;
+  addToEnv (makeSym "symbolp") (SUBR(ref(subrSymbolp))) gEnv;
+  addToEnv (makeSym "+") (SUBR(ref(subrAdd))) gEnv;
+  addToEnv (makeSym "*") (SUBR(ref(subrMul))) gEnv;
+  addToEnv (makeSym "-") (SUBR(ref(subrSub))) gEnv;
+  addToEnv (makeSym "/") (SUBR(ref(subrDiv))) gEnv;
+  addToEnv (makeSym "mod") (SUBR(ref(subrMod))) gEnv;
   addToEnv (makeSym "t") (makeSym "t") gEnv;
   repl "> ")
