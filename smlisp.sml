@@ -179,6 +179,9 @@ and evalCons obj env =
       | _ => eval (safeCar(safeCdr args)) env)
     else if eqSym2 "lambda" opr then
       makeExpr args env
+    else if eqSym2 "defun" opr then (
+      addToEnv (safeCar args) (makeExpr (safeCdr args) env) gEnv;
+      safeCar args)
     else apply (eval opr env) (evlis args env NIL) env
   end
 and evlis lst env acc =
