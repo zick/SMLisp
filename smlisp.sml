@@ -23,7 +23,7 @@ fun safeCdr obj =
 
 val symTable = ref [("nil", NIL)]
 fun lookupSym (_, []) = NONE
-  | lookupSym (str1, (str2, sym)::rest) =
+  | lookupSym (str1 : string, (str2, sym)::rest) =
       if str1 = str2 then SOME sym
       else lookupSym (str1, rest)
 fun makeSym str =
@@ -34,6 +34,16 @@ fun makeSym str =
            symTable := (str, ret)::(!symTable);
            ret
          end
+
+fun eqSym x y =
+  case (x, y) of
+       (SYM s1, SYM s2) => s1 = s2
+     | _ => false
+
+fun eqSym2 s1 y =
+  case y of
+       SYM s2 => s1 = s2
+     | _ => false
 
 fun makeCons a d = CONS(ref(ref a, ref d))
 
@@ -120,16 +130,16 @@ and printList obj delimiter acc =
      | NIL => acc
      | _ => acc ^ " . " ^ printObj obj
 
-fun findVarInFrame str alist =
+fun findVarInFrame sym alist =
   case safeCar (safeCar alist) of
-       SYM k => if k = str then safeCar alist
-                else findVarInFrame str (safeCdr alist)
+       SYM k => if eqSym2 k sym then safeCar alist
+                else findVarInFrame sym (safeCdr alist)
      | _ => NIL
 
 fun findVar sym env =
-  case (env, sym) of
-       (CONS(ref(ref a, ref d)), SYM str) =>
-         (case findVarInFrame str a of
+  case env of
+       CONS(ref(ref a, ref d)) =>
+         (case findVarInFrame sym a of
                NIL => findVar sym d
              | pair => pair)
     | _ => NIL
@@ -147,11 +157,39 @@ fun eval obj env =
          (case findVar obj env of
                NIL => ERROR ((printObj obj) ^ " has no value")
              | pair => safeCdr(pair))
-     | CONS _ => ERROR "noimpl"
+     | CONS _ => evalCons obj env
      | _ => obj
+and evalCons obj env =
+  let val opr = safeCar obj
+      val args = safeCdr obj
+  in
+    if eqSym2 "quote" opr then
+      safeCar(args)
+    else if eqSym2 "if" opr then (
+      case eval (safeCar args) env of
+        NIL => eval (safeCar(safeCdr(safeCdr args))) env
+      | _ => eval (safeCar(safeCdr args)) env)
+    else apply (eval opr env) (evlis args env NIL) env
+  end
+and evlis lst env acc =
+  case lst of
+    NIL => nreverse acc
+  | _ => (
+      case eval (safeCar lst) env of
+        ERROR m => ERROR m
+      | elm => evlis (safeCdr lst) env (makeCons elm acc))
+and apply f args env =
+case (f, args) of
+    ((ERROR m), _) => ERROR m
+  | (_, ERROR m) => ERROR m
+  | (SUBR f1, _) => f1 args
+  | _ => ERROR ((printObj f) ^ " is not function")
+
+fun subrCar args = safeCar (safeCar args)
+fun subrCdr args = safeCdr (safeCar args)
+fun subrCons args = makeCons (safeCar args) (safeCar (safeCdr args))
 
 fun first (x, y) = x
-fun second (x, y) = y
 
 fun repl prompt =
   (TextIO.print prompt;
@@ -162,5 +200,8 @@ fun repl prompt =
       | NONE => ())
 
 fun run _ = (
+  addToEnv (makeSym "car") (SUBR subrCar) gEnv;
+  addToEnv (makeSym "cdr") (SUBR subrCdr) gEnv;
+  addToEnv (makeSym "cons") (SUBR subrCons) gEnv;
   addToEnv (makeSym "t") (makeSym "t") gEnv;
   repl "> ")
