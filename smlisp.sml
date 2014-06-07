@@ -182,6 +182,16 @@ and evalCons obj env =
     else if eqSym2 "defun" opr then (
       addToEnv (safeCar args) (makeExpr (safeCdr args) env) gEnv;
       safeCar args)
+    else if eqSym2 "setq" opr then
+      let val value = eval (safeCar (safeCdr args)) env
+          val sym = safeCar args
+          val bind = findVar sym env
+      in
+        case bind of
+             CONS(ref(a, d)) => d := value
+           | _ => addToEnv sym value gEnv;
+        value
+      end
     else apply (eval opr env) (evlis args env NIL) env
   end
 and evlis lst env acc =
