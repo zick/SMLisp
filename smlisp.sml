@@ -47,6 +47,8 @@ fun eqSym2 s1 y =
 
 fun makeCons a d = CONS(ref(ref a, ref d))
 
+fun makeExpr args env = EXPR(safeCar args, safeCdr args, env)
+
 fun nreconc lst tail =
   case lst of
        CONS(ref(a, d)) =>
@@ -57,6 +59,12 @@ fun nreconc lst tail =
      | _ => tail
 fun nreverse lst =
   nreconc lst NIL
+
+fun pairlis lst1 lst2 acc =
+  case (lst1, lst2) of
+       (CONS(ref(ref a1, ref d1)), CONS(ref(ref a2, ref d2))) =>
+         pairlis d1 d2 (makeCons (makeCons a1 a2) acc)
+     | _ => nreverse acc
 
 fun isSpace c =
   c = #"\t" orelse c = #"\r" orelse c = #"\n" orelse c = #" "
@@ -169,6 +177,8 @@ and evalCons obj env =
       case eval (safeCar args) env of
         NIL => eval (safeCar(safeCdr(safeCdr args))) env
       | _ => eval (safeCar(safeCdr args)) env)
+    else if eqSym2 "lambda" opr then
+      makeExpr args env
     else apply (eval opr env) (evlis args env NIL) env
   end
 and evlis lst env acc =
@@ -178,11 +188,16 @@ and evlis lst env acc =
       case eval (safeCar lst) env of
         ERROR m => ERROR m
       | elm => evlis (safeCdr lst) env (makeCons elm acc))
+and progn body env acc =
+  case body of
+       CONS(ref(ref a, ref d)) => progn d env (eval a env)
+     | _ => acc
 and apply f args env =
 case (f, args) of
     ((ERROR m), _) => ERROR m
   | (_, ERROR m) => ERROR m
   | (SUBR f1, _) => f1 args
+  | (EXPR(a, b, e), _) => progn b (makeCons (pairlis a args NIL) e) NIL
   | _ => ERROR ((printObj f) ^ " is not function")
 
 fun subrCar args = safeCar (safeCar args)
