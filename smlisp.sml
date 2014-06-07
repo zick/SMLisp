@@ -7,18 +7,18 @@ datatype obj =
   | NUM of int
   | SYM of string
   | ERROR of string
-  | CONS of (obj ref) * (obj ref)
+  | CONS of ((obj ref) * (obj ref)) ref
   | SUBR of obj -> obj
   | EXPR of obj * obj * obj
 
 fun safeCar obj =
   case obj of
-       CONS(a, d) => !a
+       CONS(ref(ref a,  ref d)) => a
      | _ => NIL
 
 fun safeCdr obj =
   case obj of
-       CONS(a, d) => !d
+       CONS(ref(ref a,  ref d)) => d
      | _ => NIL
 
 val symTable = ref [("nil", NIL)]
@@ -35,9 +35,11 @@ fun makeSym str =
            ret
          end
 
+fun makeCons a d = CONS(ref(ref a, ref d))
+
 fun nreconc lst tail =
   case lst of
-       CONS(a, d) =>
+       CONS(ref(a, d)) =>
          let val tmp = !d in
            d := tail;
            nreconc tmp lst
@@ -63,7 +65,7 @@ fun skipSpaces str =
 fun makeNumOrSym str =
   case Int.fromString str of
        SOME n => NUM n
-     | NONE => SYM str
+     | NONE => makeSym str
 
 fun position (_, [], _) = NONE
   | position (f, key::rest, n) =
@@ -90,7 +92,8 @@ fun read str =
   end
 and readQuote str =
   case read str of
-    (elm, next) => (CONS(ref (SYM "quote"), ref (CONS(ref elm, ref NIL))), next)
+    (elm, next) =>
+      (makeCons (makeSym "quote") (makeCons elm NIL), next)
 and readList str acc =
   case (explode (skipSpaces str)) of
        [] => (ERROR "unfinished parenthesis", "")
@@ -99,7 +102,7 @@ and readList str acc =
          else
          case read str of
               (ERROR e, next) => (ERROR e, next)
-            | (elm, next) => readList next (CONS(ref elm, ref acc))
+            | (elm, next) => readList next (makeCons elm acc)
 
 fun printObj obj =
   case obj of
@@ -107,15 +110,45 @@ fun printObj obj =
      | NUM n => Int.toString(n)
      | SYM s => s
      | ERROR s => "<error: " ^ s ^ ">"
-     | CONS(a, d) => "(" ^ (printList obj "" "") ^ ")"
+     | CONS _ => "(" ^ (printList obj "" "") ^ ")"
      | SUBR(_) => "<subr>"
      | EXPR(_, _, _) => "<expr>"
 and printList obj delimiter acc =
   case obj of
-       CONS(a, d) =>
-         printList (!d) " " (acc ^ delimiter ^ printObj (!a))
+       CONS(ref(ref a, ref d)) =>
+         printList d " " (acc ^ delimiter ^ printObj a)
      | NIL => acc
      | _ => acc ^ " . " ^ printObj obj
+
+fun findVarInFrame str alist =
+  case safeCar (safeCar alist) of
+       SYM k => if k = str then safeCar alist
+                else findVarInFrame str (safeCdr alist)
+     | _ => NIL
+
+fun findVar sym env =
+  case (env, sym) of
+       (CONS(ref(ref a, ref d)), SYM str) =>
+         (case findVarInFrame str a of
+               NIL => findVar sym d
+             | pair => pair)
+    | _ => NIL
+
+val gEnv = makeCons NIL NIL
+
+fun addToEnv sym value env =
+  case env of
+       CONS(ref(a, d)) => a := makeCons (makeCons sym value) (!a)
+     | _ => ()
+
+fun eval obj env =
+  case obj of
+       SYM _ =>
+         (case findVar obj env of
+               NIL => ERROR ((printObj obj) ^ " has no value")
+             | pair => safeCdr(pair))
+     | CONS _ => ERROR "noimpl"
+     | _ => obj
 
 fun first (x, y) = x
 fun second (x, y) = y
@@ -123,7 +156,11 @@ fun second (x, y) = y
 fun repl prompt =
   (TextIO.print prompt;
    case TextIO.inputLine TextIO.stdIn of
-        SOME line => (print ((printObj (first(read line))) ^ "\n"); repl prompt)
+        SOME line =>
+          (print ((printObj (eval(first(read line)) gEnv)) ^ "\n");
+           repl prompt)
       | NONE => ())
 
-fun run _ = repl "> "
+fun run _ = (
+  addToEnv (makeSym "t") (makeSym "t") gEnv;
+  repl "> ")
