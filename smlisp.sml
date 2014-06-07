@@ -7,18 +7,18 @@ datatype obj =
   | NUM of int
   | SYM of string
   | ERROR of string
-  | CONS of obj * obj
+  | CONS of (obj ref) * (obj ref)
   | SUBR of obj -> obj
   | EXPR of obj * obj * obj
 
 fun safeCar obj =
   case obj of
-       CONS(a, d) => a
+       CONS(a, d) => !a
      | _ => NIL
 
 fun safeCdr obj =
   case obj of
-       CONS(a, d) => d
+       CONS(a, d) => !d
      | _ => NIL
 
 val symTable = ref [("nil", NIL)]
@@ -35,36 +35,35 @@ fun makeSym str =
            ret
          end
 
+fun nreconc lst tail =
+  case lst of
+       CONS(a, d) =>
+         let val tmp = !d in
+           d := tail;
+           nreconc tmp lst
+         end
+     | _ => tail
+fun nreverse lst =
+  nreconc lst NIL
+
 fun isSpace c =
   c = #"\t" orelse c = #"\r" orelse c = #"\n" orelse c = #" "
 
 fun isDelimiter c =
   c = kLPar orelse c = kRPar orelse c = kQuote orelse isSpace c
 
+fun skipSpacesList lst =
+  case lst of
+       [] => []
+     | x::xs => if isSpace(x) then skipSpacesList xs
+                else lst
 fun skipSpaces str =
-  implode (foldr (fn(x, y) => if isSpace x then y else x::y) [] (explode str))
-
-fun tryToParseNumChar c =
-  if #"0" <= c andalso c <= #"9" then SOME (ord c - ord #"0") else NONE
-
-fun tryToParseNum ([], n) = SOME n
-  | tryToParseNum (c::rest, n) =
-      case tryToParseNumChar c of
-           SOME x => tryToParseNum (rest, x + n * 10)
-         | NONE => NONE
+  implode (skipSpacesList (explode str))
 
 fun makeNumOrSym str =
-  case explode str of
-       c::rest =>
-         let
-           val lst = if c = #"-" then rest else c::rest
-           val sign = if c = #"-" then ~1 else 1
-         in
-           case tryToParseNum (lst, 0) of
-                SOME n => NUM (n * sign)
-              | NONE => SYM str
-         end
-     | _ => NIL
+  case Int.fromString str of
+       SOME n => NUM n
+     | NONE => SYM str
 
 fun position (_, [], _) = NONE
   | position (f, key::rest, n) =
@@ -77,13 +76,46 @@ fun readAtom str =
      | NONE => (makeNumOrSym str, "")
 
 fun read str =
-  case explode (skipSpaces str) of
-       [] => (ERROR "empty input", "")
-     | x::xs =>
-         if x = kRPar then (ERROR ("invalid syntax:" ^ str), "")
-         else if x = kLPar then (ERROR "noimpl", "")
-         else if x = kQuote then (ERROR "noimpl", "")
-         else readAtom (implode (x::xs))
+  let val str1 = skipSpaces str
+  in
+    case explode str1 of
+         [] => (ERROR "empty input", "")
+       | x::xs =>
+           if x = kRPar then (ERROR ("invalid syntax:" ^ str1), "")
+           else if x = kLPar then
+             readList (substring(str1, 1, size str1 - 1)) NIL
+           else if x = kQuote then
+             readQuote (substring(str1, 1, size str1 - 1))
+           else readAtom (implode (x::xs))
+  end
+and readQuote str =
+  case read str of
+    (elm, next) => (CONS(ref (SYM "quote"), ref (CONS(ref elm, ref NIL))), next)
+and readList str acc =
+  case (explode (skipSpaces str)) of
+       [] => (ERROR "unfinished parenthesis", "")
+     | c::rest =>
+         if c = kRPar then (nreverse acc, implode rest)
+         else
+         case read str of
+              (ERROR e, next) => (ERROR e, next)
+            | (elm, next) => readList next (CONS(ref elm, ref acc))
+
+fun printObj obj =
+  case obj of
+       NIL => "nil"
+     | NUM n => Int.toString(n)
+     | SYM s => s
+     | ERROR s => "<error: " ^ s ^ ">"
+     | CONS(a, d) => "(" ^ (printList obj "" "") ^ ")"
+     | SUBR(_) => "<subr>"
+     | EXPR(_, _, _) => "<expr>"
+and printList obj delimiter acc =
+  case obj of
+       CONS(a, d) =>
+         printList (!d) " " (acc ^ delimiter ^ printObj (!a))
+     | NIL => acc
+     | _ => acc ^ " . " ^ printObj obj
 
 fun first (x, y) = x
 fun second (x, y) = y
@@ -91,7 +123,7 @@ fun second (x, y) = y
 fun repl prompt =
   (TextIO.print prompt;
    case TextIO.inputLine TextIO.stdIn of
-        SOME line => (read line; repl prompt)
+        SOME line => (print ((printObj (first(read line))) ^ "\n"); repl prompt)
       | NONE => ())
 
 fun run _ = repl "> "
