@@ -35,6 +35,13 @@ fun makeSym str =
            ret
          end
 
+val symQuote = makeSym "quote"
+val symIf = makeSym "if"
+val symLambda = makeSym "lambda"
+val symDefun = makeSym "defun"
+val symSetq = makeSym "setq"
+val symT = makeSym "t"
+
 fun eqSym x y =
   case (x, y) of
        (SYM s1, SYM s2) => s1 = s2
@@ -171,18 +178,18 @@ and evalCons obj env =
   let val opr = safeCar obj
       val args = safeCdr obj
   in
-    if eqSym2 "quote" opr then
+    if eqSym symQuote opr then
       safeCar(args)
-    else if eqSym2 "if" opr then (
+    else if eqSym symIf opr then (
       case eval (safeCar args) env of
         NIL => eval (safeCar(safeCdr(safeCdr args))) env
       | _ => eval (safeCar(safeCdr args)) env)
-    else if eqSym2 "lambda" opr then
+    else if eqSym symLambda opr then
       makeExpr args env
-    else if eqSym2 "defun" opr then (
+    else if eqSym symDefun opr then (
       addToEnv (safeCar args) (makeExpr (safeCdr args) env) gEnv;
       safeCar args)
-    else if eqSym2 "setq" opr then
+    else if eqSym symSetq opr then
       let val value = eval (safeCar (safeCdr args)) env
           val sym = safeCar args
           val bind = findVar sym env
@@ -221,34 +228,34 @@ fun subrCons args = makeCons (safeCar args) (safeCar (safeCdr args))
 
 fun objEq x y =
   case (x, y) of
-       (NIL, NIL) => makeSym("t")
-     | (NUM a, NUM b) => if a = b then makeSym("t") else NIL
-     | (SYM a, SYM b) => if a = b then makeSym("t") else NIL
-     | (ERROR a, ERROR b) => if a = b then makeSym("t") else NIL
-     | (CONS a, CONS b) => if a = b then makeSym("t") else NIL
-     | (SUBR a, SUBR b) => if a = b then makeSym("t") else NIL
+       (NIL, NIL) => symT
+     | (NUM a, NUM b) => if a = b then symT else NIL
+     | (SYM a, SYM b) => if a = b then symT else NIL
+     | (ERROR a, ERROR b) => if a = b then symT else NIL
+     | (CONS a, CONS b) => if a = b then symT else NIL
+     | (SUBR a, SUBR b) => if a = b then symT else NIL
      | (EXPR(a1, b1, c1), EXPR(a2, b2, c2)) => (
          case (objEq a1 a2, objEq b1 b2, objEq c1 c2) of
               (NIL, _, _) => NIL
             | (_, NIL, _) => NIL
             | (_, _, NIL) => NIL
-            |  _ => makeSym("t"))
+            |  _ => symT)
      | _ => NIL
 fun subrEq args = objEq (safeCar args) (safeCar (safeCdr args))
 
 fun subrAtom args =
   case safeCar(args) of
        CONS _ => NIL
-     | _ => makeSym("t")
+     | _ => symT
 
 fun subrNumberp args =
   case safeCar(args) of
-       NUM _ => makeSym("t")
+       NUM _ => symT
      | _ => NIL
 
 fun subrSymbolp args =
   case safeCar(args) of
-       SYM _ => makeSym("t")
+       SYM _ => symT
      | _ => NIL
 
 fun subrAddOrMul f initVal =
